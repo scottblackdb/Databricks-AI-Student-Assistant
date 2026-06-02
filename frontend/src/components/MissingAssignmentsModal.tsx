@@ -1,5 +1,6 @@
 // Sheet shown when tapping the bell (port of iOS MissingAssignmentsView).
 import { MessageContent } from "./MessageContent";
+import { Modal } from "./Modal";
 
 export interface MissingAssignmentsState {
   loading: boolean;
@@ -47,9 +48,11 @@ export function MissingAssignmentsModal({ state, onRefresh, onClose }: Props) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <div className="modal-header">
+    <Modal
+      onClose={onClose}
+      bodyClassName="scroll"
+      header={
+        <>
           <button className="text-button" onClick={onClose}>
             Done
           </button>
@@ -57,9 +60,10 @@ export function MissingAssignmentsModal({ state, onRefresh, onClose }: Props) {
           <button className="text-button" onClick={onRefresh} disabled={loading}>
             Refresh
           </button>
-        </div>
-        <div className="modal-body scroll">{content}</div>
-      </div>
-    </div>
+        </>
+      }
+    >
+      {content}
+    </Modal>
   );
 }

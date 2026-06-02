@@ -1,5 +1,6 @@
 // Renders parsed JSON in a readable layout (port of iOS FormattedJSONView).
-import { HIDDEN_JSON_KEYS, formatKeyForDisplay, parseEventNameWithDetails } from "../messageFormatting";
+import { HIDDEN_JSON_KEYS, formatKeyForDisplay } from "../messageFormatting";
+import { StringValue } from "../linkRendering";
 
 function primitive(value: unknown): string {
   if (typeof value === "string") return value;
@@ -27,14 +28,7 @@ function KeyValueRow({ name, value }: { name: string; value: unknown }) {
       </div>
     );
   } else if (typeof value === "string") {
-    const link = parseEventNameWithDetails(value);
-    body = link ? (
-      <a className="json-link" href={link.url} target="_blank" rel="noreferrer">
-        {link.name}
-      </a>
-    ) : (
-      <span className="json-value">{primitive(value)}</span>
-    );
+    body = <StringValue value={value} fieldKey={name} />;
   } else {
     body = <span className="json-value">{primitive(value)}</span>;
   }
@@ -69,6 +63,8 @@ function JsonArray({ arr }: { arr: unknown[] }) {
             <Dictionary dict={item} />
           ) : Array.isArray(item) ? (
             <JsonArray arr={item} />
+          ) : typeof item === "string" ? (
+            <StringValue value={item} />
           ) : (
             <span className="json-value">{primitive(item)}</span>
           )}
@@ -85,6 +81,8 @@ export function FormattedJson({ value }: { value: unknown }) {
         <Dictionary dict={value} />
       ) : Array.isArray(value) ? (
         <JsonArray arr={value} />
+      ) : typeof value === "string" ? (
+        <StringValue value={value} />
       ) : (
         <span className="json-value">{primitive(value)}</span>
       )}

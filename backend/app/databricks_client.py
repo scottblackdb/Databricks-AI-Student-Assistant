@@ -333,10 +333,18 @@ async def _send_invocations(input_messages: list[dict[str, str]], conversation_i
 async def fetch_missing_assignments(student_id: str, conversation_id: str) -> str:
     """Ask the agent for missing assignments (ported from fetchMissingAssignments)."""
     user_message = (
-        f"In regards to student_id {student_id}, what are my missing assignments? "
+        f"{_student_prefix(student_id)}what are my missing assignments? "
         "Return the list of assignments in JSON format."
     )
     return await _send_invocations([{"role": "user", "content": user_message}], conversation_id)
+
+
+def _student_prefix(student_id: str) -> str:
+    return f"In regards to student_id {student_id}, "
+
+
+def _student_user_message(student_id: str, message: str) -> str:
+    return f"{_student_prefix(student_id)}User question: {message}"
 
 
 async def ask_question(
@@ -351,8 +359,8 @@ async def ask_question(
         if not text.strip():
             continue
         if is_from_user:
-            input_messages.append({"role": "user", "content": f"In regards to student_id {student_id}. User question: {text}"})
+            input_messages.append({"role": "user", "content": _student_user_message(student_id, text)})
         else:
             input_messages.append({"role": "assistant", "content": text})
-    input_messages.append({"role": "user", "content": f"In regards to student_id {student_id}. User question: {message}"})
+    input_messages.append({"role": "user", "content": _student_user_message(student_id, message)})
     return await _send_invocations(input_messages, conversation_id)

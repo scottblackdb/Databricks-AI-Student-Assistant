@@ -5,12 +5,11 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import databricks_client as db
 from .config import get_settings
-from .students import require_student
 from .models import (
     AgentResponse,
     AskRequest,
@@ -19,7 +18,7 @@ from .models import (
     StudentOut,
     TextResponse,
 )
-from .students import STUDENTS
+from .students import STUDENTS, require_student
 
 logger = logging.getLogger(__name__)
 

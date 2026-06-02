@@ -1,23 +1,25 @@
+import type { PromptItem } from "./Header";
+
 interface Props {
-  questions: string[];
+  items: PromptItem[];
   disabled: boolean;
-  onSelect: (question: string) => void;
+  onSelect: (item: PromptItem) => void;
 }
 
-export function SuggestedQuestionsPanel({ questions, disabled, onSelect }: Props) {
+export function SuggestedQuestionsPanel({ items, disabled, onSelect }: Props) {
   return (
     <aside className="suggested-questions-panel" aria-label="Suggested questions">
       <h2 className="suggested-questions-title">Suggested questions</h2>
       <ul className="suggested-questions-list">
-        {questions.map((question) => (
-          <li key={question}>
+        {items.map((item) => (
+          <li key={item.label}>
             <button
               type="button"
               className="suggested-question-button"
               disabled={disabled}
-              onClick={() => onSelect(question)}
+              onClick={() => onSelect(item)}
             >
-              {question}
+              {item.label}
             </button>
           </li>
         ))}

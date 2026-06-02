@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   askQuestion,
   fetchMissingAssignments,
@@ -9,6 +9,7 @@ import {
 } from "./api";
 import { SCHEDULE_LOADING_TEXT, toAgentTurns } from "./chatTurns";
 import { notificationCount } from "./messageFormatting";
+import { errorMessage, newMessageId } from "./utils";
 import { Header, type PromptItem } from "./components/Header";
 import { MessageBubble } from "./components/MessageBubble";
 import { SettingsModal } from "./components/SettingsModal";
@@ -18,21 +19,29 @@ import {
   type MissingAssignmentsState,
 } from "./components/MissingAssignmentsModal";
 
-const DEFAULT_PROMPT_ITEMS: PromptItem[] = [
+const MENU_PROMPTS: PromptItem[] = [
   { label: "Recommend Me Events", prompt: "Based on my interests recommend me upcoming events" },
 ];
 
-const SUGGESTED_QUESTIONS = [
-  "What are my grades?",
-  "What sporting events are coming up?",
-  "What community events are coming up?",
-  "What classes do I need to take to graduate?",
-  "Suggest what classes and when the classes are taught for next semester",
+const SUGGESTED_QUESTIONS: PromptItem[] = [
+  { label: "What are my grades?", prompt: "What are my grades?" },
+  { label: "What sporting events are coming up?", prompt: "What sporting events are coming up?" },
+  { label: "What community events are coming up?", prompt: "What community events are coming up?" },
+  {
+    label: "What classes do I need to take to graduate?",
+    prompt: "What classes do I need to take to graduate?",
+  },
+  {
+    label: "Suggest what classes and when the classes are taught for next semester",
+    prompt: "Suggest what classes and when the classes are taught for next semester",
+  },
 ];
 
-function uid(): string {
-  return crypto.randomUUID();
-}
+const EMPTY_MISSING_STATE: MissingAssignmentsState = {
+  loading: false,
+  text: null,
+  error: null,
+};
 
 function timeOfDayGreeting(): string {
   const hour = new Date().getHours();
@@ -46,6 +55,10 @@ function resolveStudentId(stored: string | null, students: Student[]): string {
   return students[0]?.id ?? "";
 }
 
+function isStaleGeneration(generation: number, current: number): boolean {
+  return generation !== current;
+}
+
 export default function App() {
   const [students, setStudents] = useState<Student[]>([]);
   const [studentsLoaded, setStudentsLoaded] = useState(false);
@@ -57,11 +70,7 @@ export default function App() {
   const [isSending, setIsSending] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showMissingAssignments, setShowMissingAssignments] = useState(false);
-  const [missingState, setMissingState] = useState<MissingAssignmentsState>({
-    loading: false,
-    text: null,
-    error: null,
-  });
+  const [missingState, setMissingState] = useState<MissingAssignmentsState>(EMPTY_MISSING_STATE);
 
   const chatConversationIdRef = useRef<string | null>(null);
   const missingConversationIdRef = useRef<string | null>(null);
@@ -71,24 +80,32 @@ export default function App() {
   const firstName =
     students.find((s) => s.id === selectedStudentId)?.first_name ?? "Eagle";
 
+  const notifCount = useMemo(
+    () => (missingState.text ? notificationCount(missingState.text) : 0),
+    [missingState.text],
+  );
+
   const fetchSchedule = useCallback(async (studentId: string, generation: number) => {
     setChatMessages((msgs) => [
       ...msgs,
-      { id: uid(), isFromUser: false, text: SCHEDULE_LOADING_TEXT },
+      { id: newMessageId(), isFromUser: false, text: SCHEDULE_LOADING_TEXT },
     ]);
     try {
       const text = await fetchTodaysSchedule(studentId);
-      if (generation !== loadGenerationRef.current) return;
+      if (isStaleGeneration(generation, loadGenerationRef.current)) return;
       setChatMessages((msgs) => [
         ...msgs.filter((m) => m.text !== SCHEDULE_LOADING_TEXT),
-        { id: uid(), isFromUser: false, text },
+        { id: newMessageId(), isFromUser: false, text },
       ]);
     } catch (e) {
-      if (generation !== loadGenerationRef.current) return;
-      const message = e instanceof Error ? e.message : String(e);
+      if (isStaleGeneration(generation, loadGenerationRef.current)) return;
       setChatMessages((msgs) => [
         ...msgs.filter((m) => m.text !== SCHEDULE_LOADING_TEXT),
-        { id: uid(), isFromUser: false, text: `Couldn't load today's schedule: ${message}` },
+        {
+          id: newMessageId(),
+          isFromUser: false,
+          text: `Couldn't load today's schedule: ${errorMessage(e)}`,
+        },
       ]);
     }
   }, []);
@@ -97,13 +114,12 @@ export default function App() {
     setMissingState((s) => ({ ...s, loading: true, error: null }));
     try {
       const res = await fetchMissingAssignments(studentId, missingConversationIdRef.current);
-      if (generation !== loadGenerationRef.current) return;
+      if (isStaleGeneration(generation, loadGenerationRef.current)) return;
       missingConversationIdRef.current = res.conversation_id;
       setMissingState({ loading: false, text: res.text, error: null });
     } catch (e) {
-      if (generation !== loadGenerationRef.current) return;
-      const message = e instanceof Error ? e.message : String(e);
-      setMissingState({ loading: false, text: null, error: message });
+      if (isStaleGeneration(generation, loadGenerationRef.current)) return;
+      setMissingState({ loading: false, text: null, error: errorMessage(e) });
     }
   }, []);
 
@@ -126,7 +142,7 @@ export default function App() {
     setChatMessages([]);
     setQuestionText("");
     setShowMissingAssignments(false);
-    setMissingState({ loading: false, text: null, error: null });
+    setMissingState(EMPTY_MISSING_STATE);
 
     const generation = ++loadGenerationRef.current;
     fetchSchedule(selectedStudentId, generation);
@@ -138,15 +154,14 @@ export default function App() {
   }, [chatMessages]);
 
   useEffect(() => {
-    const count = missingState.text ? notificationCount(missingState.text) : 0;
-    document.title = count > 0 ? `(${Math.min(count, 99)}) myUNT` : "myUNT";
-  }, [missingState.text]);
+    document.title = notifCount > 0 ? `(${Math.min(notifCount, 99)}) myUNT` : "myUNT";
+  }, [notifCount]);
 
   const sendToAgent = useCallback(
     async (displayLabel: string, prompt: string) => {
       const priorTurns = toAgentTurns(chatMessages);
       const userMessage: ChatMessage = {
-        id: uid(),
+        id: newMessageId(),
         isFromUser: true,
         text: displayLabel,
         agentText: displayLabel === prompt ? undefined : prompt,
@@ -161,10 +176,15 @@ export default function App() {
           chatConversationIdRef.current,
         );
         chatConversationIdRef.current = res.conversation_id;
-        setChatMessages((msgs) => [...msgs, { id: uid(), isFromUser: false, text: res.text }]);
+        setChatMessages((msgs) => [
+          ...msgs,
+          { id: newMessageId(), isFromUser: false, text: res.text },
+        ]);
       } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        setChatMessages((msgs) => [...msgs, { id: uid(), isFromUser: false, text: `Error: ${message}` }]);
+        setChatMessages((msgs) => [
+          ...msgs,
+          { id: newMessageId(), isFromUser: false, text: `Error: ${errorMessage(e)}` },
+        ]);
       } finally {
         setIsSending(false);
       }
@@ -179,18 +199,21 @@ export default function App() {
     void sendToAgent(question, question);
   }, [questionText, isSending, sendToAgent]);
 
-  const notifCount = missingState.text ? notificationCount(missingState.text) : 0;
+  const handleSelectPrompt = useCallback(
+    (item: PromptItem) => {
+      if (!isSending) void sendToAgent(item.label, item.prompt);
+    },
+    [isSending, sendToAgent],
+  );
 
   return (
     <div className="app-shell">
       <div className="app-container">
         <div className="app">
           <Header
-            promptItems={DEFAULT_PROMPT_ITEMS}
+            promptItems={MENU_PROMPTS}
             notificationCount={notifCount}
-            onSelectPrompt={(item) => {
-              if (!isSending) void sendToAgent(item.label, item.prompt);
-            }}
+            onSelectPrompt={handleSelectPrompt}
             onOpenSettings={() => setShowSettings(true)}
             onOpenMissingAssignments={() => setShowMissingAssignments(true)}
           />
@@ -246,19 +269,16 @@ export default function App() {
           {showMissingAssignments && (
             <MissingAssignmentsModal
               state={missingState}
-              onRefresh={() => {
-                const generation = loadGenerationRef.current;
-                void fetchMissing(selectedStudentId, generation);
-              }}
+              onRefresh={() => void fetchMissing(selectedStudentId, loadGenerationRef.current)}
               onClose={() => setShowMissingAssignments(false)}
             />
           )}
         </div>
 
         <SuggestedQuestionsPanel
-          questions={SUGGESTED_QUESTIONS}
+          items={SUGGESTED_QUESTIONS}
           disabled={isSending}
-          onSelect={(question) => void sendToAgent(question, question)}
+          onSelect={handleSelectPrompt}
         />
       </div>
     </div>
