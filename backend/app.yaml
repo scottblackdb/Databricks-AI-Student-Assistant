@@ -1,0 +1,18 @@
+# Databricks App manifest. Deploy the `backend/` directory as the app source
+# (after building the frontend into backend/static — see build_frontend.sh).
+#
+# command is an argv list run without a shell (no $VAR expansion). serve.py reads
+# the injected DATABRICKS_APP_PORT itself.
+command: ["python", "serve.py"]
+
+env:
+  # SQL warehouse for the today's-schedule query. Either hardcode the id here, or
+  # add the warehouse as an App resource and use `valueFrom: <resource-key>`.
+  - name: WAREHOUSE_ID
+    value: "17f6d9fabd1c7633"
+  # Model serving endpoint name for the agent.
+  - name: SERVING_ENDPOINT
+    value: "mas-e8cd6cde-endpoint"
+  # DATABRICKS_HOST and the service-principal OAuth credentials
+  # (DATABRICKS_CLIENT_ID / DATABRICKS_CLIENT_SECRET) are injected automatically
+  # by the Apps runtime — no token needed here.

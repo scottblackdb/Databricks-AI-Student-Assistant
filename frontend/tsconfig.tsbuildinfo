@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/api.ts","./src/main.tsx","./src/messageformatting.ts","./src/components/formattedjson.tsx","./src/components/header.tsx","./src/components/messagebubble.tsx","./src/components/missingassignmentsmodal.tsx","./src/components/settingsmodal.tsx"],"version":"5.9.3"}
