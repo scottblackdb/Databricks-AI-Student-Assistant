@@ -2,13 +2,14 @@
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import databricks_client as db
 from .config import get_settings
+from .students import require_student
 from .models import (
     AgentResponse,
     AskRequest,
@@ -43,7 +44,11 @@ def _new_conversation_id(existing: str | None) -> str:
 async def health() -> dict[str, object]:
     # In a Databricks App there is no PAT; auth comes from the service principal (OAuth).
     auth_mode = "pat" if settings.databricks_token else "service-principal-oauth"
-    return {"ok": True, "auth_mode": auth_mode}
+    return {
+        "ok": True,
+        "auth_mode": auth_mode,
+        "token_configured": bool(settings.databricks_token),
+    }
 
 
 @app.get("/api/students", response_model=list[StudentOut])
@@ -51,14 +56,23 @@ async def list_students() -> list[StudentOut]:
     return [StudentOut(**s) for s in STUDENTS]
 
 
+def _validate_student_id(student_id: str) -> None:
+    try:
+        require_student(student_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/schedule/today", response_model=TextResponse)
 async def schedule_today(req: ScheduleRequest) -> TextResponse:
+    _validate_student_id(req.student_id)
     text = await db.fetch_todays_schedule(req.student_id)
     return TextResponse(text=text)
 
 
 @app.post("/api/missing-assignments", response_model=AgentResponse)
 async def missing_assignments(req: MissingAssignmentsRequest) -> AgentResponse:
+    _validate_student_id(req.student_id)
     conversation_id = _new_conversation_id(req.conversation_id)
     text = await db.fetch_missing_assignments(req.student_id, conversation_id)
     return AgentResponse(text=text, conversation_id=conversation_id)
@@ -66,6 +80,7 @@ async def missing_assignments(req: MissingAssignmentsRequest) -> AgentResponse:
 
 @app.post("/api/agent/ask", response_model=AgentResponse)
 async def agent_ask(req: AskRequest) -> AgentResponse:
+    _validate_student_id(req.student_id)
     conversation_id = _new_conversation_id(req.conversation_id)
     prior = [(t.is_from_user, t.text) for t in req.prior_turns]
     text = await db.ask_question(req.student_id, req.message, prior, conversation_id)

@@ -74,7 +74,8 @@ python3 -m uvicorn app.main:app --reload --port 8000
 ```
 
 The backend serves on `http://localhost:8000`. Check `GET /api/health` —
-`token_configured` should be `true` once `.env` has a token.
+`token_configured` should be `true` once `.env` has a token (`auth_mode` is
+`pat` locally, or `service-principal-oauth` in a Databricks App).
 
 ### 2. Frontend
 
@@ -152,7 +153,7 @@ All backend config is environment-driven (`backend/.env`, see `.env.example`):
 
 | Method | Path                       | Body                                                       | Returns                              |
 | ------ | -------------------------- | ---------------------------------------------------------- | ------------------------------------ |
-| GET    | `/api/health`              | —                                                          | `{ ok, token_configured }`           |
+| GET    | `/api/health`              | —                                                          | `{ ok, auth_mode, token_configured }` |
 | GET    | `/api/students`            | —                                                          | `[{ id, display_name, first_name }]` |
 | POST   | `/api/schedule/today`      | `{ student_id }`                                           | `{ text }`                           |
 | POST   | `/api/missing-assignments` | `{ student_id, conversation_id? }`                         | `{ text, conversation_id }`          |

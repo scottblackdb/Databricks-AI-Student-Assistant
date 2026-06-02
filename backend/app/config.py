@@ -10,15 +10,15 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     # Databricks workspace, e.g. https://adb-xxxx.azuredatabricks.net (no trailing slash)
-    databricks_host: str = "https://adb-3011697725699826.6.azuredatabricks.net"
+    databricks_host: str = ""
     # Personal access token (Bearer). Set this in backend/.env — do NOT commit it.
     databricks_token: str = ""
 
     # SQL warehouse used for the Statement Execution API (today's schedule).
-    warehouse_id: str = "17f6d9fabd1c7633"
+    warehouse_id: str = ""
 
     # Model serving endpoint name for the agent (missing assignments / chat).
-    serving_endpoint: str = "mas-e8cd6cde-endpoint"
+    serving_endpoint: str = ""
 
     # Request timeout (seconds) for Databricks calls.
     request_timeout: float = 180.0

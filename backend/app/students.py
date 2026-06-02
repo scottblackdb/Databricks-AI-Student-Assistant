@@ -11,7 +11,9 @@ DEFAULT_STUDENT_ID = STUDENTS[0]["id"]
 _BY_ID = {s["id"]: s for s in STUDENTS}
 
 
-def first_name(student_id: str) -> str:
-    """First name for a student id, or 'Eagle' if unknown (matches iOS fallback)."""
+def require_student(student_id: str) -> dict[str, str]:
+    """Return the student record or raise ValueError for unknown ids."""
     student = _BY_ID.get(student_id)
-    return student["first_name"] if student else "Eagle"
+    if not student:
+        raise ValueError(f"Unknown student_id: {student_id}")
+    return student

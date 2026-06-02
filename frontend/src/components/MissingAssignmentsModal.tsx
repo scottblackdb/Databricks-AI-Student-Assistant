@@ -1,8 +1,5 @@
 // Sheet shown when tapping the bell (port of iOS MissingAssignmentsView).
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { parseMessageSegments } from "../messageFormatting";
-import { FormattedJson } from "./FormattedJson";
+import { MessageContent } from "./MessageContent";
 
 export interface MissingAssignmentsState {
   loading: boolean;
@@ -40,20 +37,9 @@ export function MissingAssignmentsModal({ state, onRefresh, onClose }: Props) {
       </div>
     );
   } else if (text !== null) {
-    const segments = parseMessageSegments(text);
     content = (
       <div className="ma-result">
-        {segments.map((seg, i) =>
-          seg.kind === "text" ? (
-            seg.value.trim() ? (
-              <div className="ma-text-block" key={i}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>{seg.value}</ReactMarkdown>
-              </div>
-            ) : null
-          ) : (
-            <FormattedJson value={seg.value} key={i} />
-          ),
-        )}
+        <MessageContent text={text} variant="plain" />
       </div>
     );
   } else {

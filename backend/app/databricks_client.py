@@ -27,6 +27,11 @@ class DatabricksError(Exception):
 _BASE_HEADERS = {"Content-Type": "application/json", "Accept": "application/json"}
 
 
+def _sql_string_literal(value: str) -> str:
+    """Escape a value for use inside a SQL single-quoted string literal."""
+    return value.replace("'", "''")
+
+
 def _resolve_host_and_headers() -> tuple[str, dict[str, str]]:
     """Resolve the workspace host and auth headers.
 
@@ -66,6 +71,8 @@ def _resolve_host_and_headers() -> tuple[str, dict[str, str]]:
 async def _execute_statement(statement: str) -> str:
     """Execute SQL and return the result as a display string (ported from DatabricksSQLService)."""
     settings = get_settings()
+    if not settings.warehouse_id:
+        raise DatabricksError("WAREHOUSE_ID is not set.", status_code=500)
     host, headers = _resolve_host_and_headers()
     statements_url = f"{host}/api/2.0/sql/statements"
     body = {"warehouse_id": settings.warehouse_id, "statement": statement}
@@ -96,14 +103,15 @@ async def _poll_for_result(
     url = f"{statements_url}/{statement_id}"
     for _ in range(60):
         resp = await client.get(url, headers=headers)
-        if resp.status_code == 200:
-            data = resp.json()
-            state = (data.get("status") or {}).get("state")
-            if state == "SUCCEEDED" and "result" in data:
-                return _format_result(data["result"], data.get("manifest"))
-            if state == "FAILED":
-                message = (data.get("status") or {}).get("description") or "Statement failed."
-                raise DatabricksError(message, status_code=502)
+        if resp.status_code != 200:
+            raise DatabricksError(f"Server error {resp.status_code}: {resp.text}", status_code=502)
+        data = resp.json()
+        state = (data.get("status") or {}).get("state")
+        if state == "SUCCEEDED" and "result" in data:
+            return _format_result(data["result"], data.get("manifest"))
+        if state == "FAILED":
+            message = (data.get("status") or {}).get("description") or "Statement failed."
+            raise DatabricksError(message, status_code=502)
         await asyncio.sleep(0.5)
     raise DatabricksError("Request timed out.", status_code=504)
 
@@ -193,7 +201,7 @@ def _schedule_items(value: Any) -> list[tuple[str, str | None]]:
 
 async def fetch_todays_schedule(student_id: str) -> str:
     """Run today's-schedule query and format it (ported from fetchTodaysSchedule)."""
-    statement = f"select unt.bronze.today_classes('{student_id}')"
+    statement = f"select unt.bronze.today_classes('{_sql_string_literal(student_id)}')"
     text = (await _execute_statement(statement)).strip()
 
     if text in ("", "[]", "{}", "null", "No data"):
@@ -294,6 +302,8 @@ def _parse_invocations_response(data: Any) -> str | None:
 async def _send_invocations(input_messages: list[dict[str, str]], conversation_id: str, user_id: str = "app-user") -> str:
     """POST to the agent /invocations endpoint and return the assistant text."""
     settings = get_settings()
+    if not settings.serving_endpoint:
+        raise DatabricksError("SERVING_ENDPOINT is not set.", status_code=500)
     host, headers = _resolve_host_and_headers()
     invocations_url = f"{host}/serving-endpoints/{settings.serving_endpoint}/invocations"
     body = {
@@ -323,8 +333,8 @@ async def _send_invocations(input_messages: list[dict[str, str]], conversation_i
 async def fetch_missing_assignments(student_id: str, conversation_id: str) -> str:
     """Ask the agent for missing assignments (ported from fetchMissingAssignments)."""
     user_message = (
-        f"In regards to student_id {student_id}. For student with ID {student_id}, "
-        "what are my missing assignments? Return the list of assignments in JSON format."
+        f"In regards to student_id {student_id}, what are my missing assignments? "
+        "Return the list of assignments in JSON format."
     )
     return await _send_invocations([{"role": "user", "content": user_message}], conversation_id)
 

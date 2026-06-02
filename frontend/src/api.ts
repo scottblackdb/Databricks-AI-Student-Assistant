@@ -10,6 +10,8 @@ export interface ChatMessage {
   id: string;
   isFromUser: boolean;
   text: string;
+  /** Prompt sent to the agent when it differs from displayed text (preset menu items). */
+  agentText?: string;
 }
 
 /** A chat turn as the agent expects it (subset of ChatMessage). */

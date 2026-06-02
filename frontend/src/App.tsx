@@ -7,6 +7,7 @@ import {
   type ChatMessage,
   type Student,
 } from "./api";
+import { SCHEDULE_LOADING_TEXT, toAgentTurns } from "./chatTurns";
 import { notificationCount } from "./messageFormatting";
 import { Header, type PromptItem } from "./components/Header";
 import { MessageBubble } from "./components/MessageBubble";
@@ -15,9 +16,6 @@ import {
   MissingAssignmentsModal,
   type MissingAssignmentsState,
 } from "./components/MissingAssignmentsModal";
-
-const SCHEDULE_LOADING_TEXT = "Retrieving your schedule for today…";
-const DEFAULT_STUDENT_ID = "0a784c0c-2ea1-449d-ab24-b25f3237631d"; // Kimberly Dudley
 
 const DEFAULT_PROMPT_ITEMS: PromptItem[] = [
   { label: "Recommend Me Events", prompt: "Based on my interests recommend me upcoming events" },
@@ -34,10 +32,16 @@ function timeOfDayGreeting(): string {
   return "Good Evening";
 }
 
+function resolveStudentId(stored: string | null, students: Student[]): string {
+  if (stored && students.some((s) => s.id === stored)) return stored;
+  return students[0]?.id ?? "";
+}
+
 export default function App() {
   const [students, setStudents] = useState<Student[]>([]);
+  const [studentsLoaded, setStudentsLoaded] = useState(false);
   const [selectedStudentId, setSelectedStudentId] = useState(
-    () => localStorage.getItem("SelectedStudentID") || DEFAULT_STUDENT_ID,
+    () => localStorage.getItem("SelectedStudentID") || "",
   );
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [questionText, setQuestionText] = useState("");
@@ -50,26 +54,28 @@ export default function App() {
     error: null,
   });
 
-  // Agent conversation id: one per browser session (fresh on reload, like the iOS app).
-  const conversationIdRef = useRef<string | null>(null);
+  const chatConversationIdRef = useRef<string | null>(null);
+  const missingConversationIdRef = useRef<string | null>(null);
+  const loadGenerationRef = useRef(0);
   const chatEndRef = useRef<HTMLDivElement>(null);
-  const scheduleRequestedRef = useRef(false);
 
   const firstName =
     students.find((s) => s.id === selectedStudentId)?.first_name ?? "Eagle";
 
-  const fetchSchedule = useCallback(async (studentId: string) => {
+  const fetchSchedule = useCallback(async (studentId: string, generation: number) => {
     setChatMessages((msgs) => [
       ...msgs,
       { id: uid(), isFromUser: false, text: SCHEDULE_LOADING_TEXT },
     ]);
     try {
       const text = await fetchTodaysSchedule(studentId);
+      if (generation !== loadGenerationRef.current) return;
       setChatMessages((msgs) => [
         ...msgs.filter((m) => m.text !== SCHEDULE_LOADING_TEXT),
         { id: uid(), isFromUser: false, text },
       ]);
     } catch (e) {
+      if (generation !== loadGenerationRef.current) return;
       const message = e instanceof Error ? e.message : String(e);
       setChatMessages((msgs) => [
         ...msgs.filter((m) => m.text !== SCHEDULE_LOADING_TEXT),
@@ -78,42 +84,50 @@ export default function App() {
     }
   }, []);
 
-  const fetchMissing = useCallback(async (studentId: string) => {
+  const fetchMissing = useCallback(async (studentId: string, generation: number) => {
     setMissingState((s) => ({ ...s, loading: true, error: null }));
     try {
-      const res = await fetchMissingAssignments(studentId, conversationIdRef.current);
-      conversationIdRef.current = res.conversation_id;
+      const res = await fetchMissingAssignments(studentId, missingConversationIdRef.current);
+      if (generation !== loadGenerationRef.current) return;
+      missingConversationIdRef.current = res.conversation_id;
       setMissingState({ loading: false, text: res.text, error: null });
     } catch (e) {
+      if (generation !== loadGenerationRef.current) return;
       const message = e instanceof Error ? e.message : String(e);
       setMissingState({ loading: false, text: null, error: message });
     }
   }, []);
 
-  // Load students once.
   useEffect(() => {
-    getStudents().then(setStudents).catch(() => setStudents([]));
+    getStudents()
+      .then((list) => {
+        setStudents(list);
+        setSelectedStudentId((current) => resolveStudentId(current, list));
+      })
+      .catch(() => setStudents([]))
+      .finally(() => setStudentsLoaded(true));
   }, []);
 
-  // First load + whenever the selected student changes: reset and refetch.
   useEffect(() => {
+    if (!studentsLoaded || !selectedStudentId) return;
+
     localStorage.setItem("SelectedStudentID", selectedStudentId);
-    conversationIdRef.current = null;
+    chatConversationIdRef.current = null;
+    missingConversationIdRef.current = null;
     setChatMessages([]);
     setQuestionText("");
     setShowMissingAssignments(false);
     setMissingState({ loading: false, text: null, error: null });
-    scheduleRequestedRef.current = true;
-    fetchSchedule(selectedStudentId);
-    fetchMissing(selectedStudentId);
-  }, [selectedStudentId, fetchSchedule, fetchMissing]);
 
-  // Auto-scroll to the latest message.
+    const generation = ++loadGenerationRef.current;
+    fetchSchedule(selectedStudentId, generation);
+    fetchMissing(selectedStudentId, generation);
+  }, [studentsLoaded, selectedStudentId, fetchSchedule, fetchMissing]);
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [chatMessages]);
 
-  // Tab badge mirrors the bell count.
   useEffect(() => {
     const count = missingState.text ? notificationCount(missingState.text) : 0;
     document.title = count > 0 ? `(${Math.min(count, 99)}) myUNT` : "myUNT";
@@ -121,12 +135,23 @@ export default function App() {
 
   const sendToAgent = useCallback(
     async (displayLabel: string, prompt: string) => {
-      const priorTurns = chatMessages.map((m) => ({ isFromUser: m.isFromUser, text: m.text }));
-      setChatMessages((msgs) => [...msgs, { id: uid(), isFromUser: true, text: displayLabel }]);
+      const priorTurns = toAgentTurns(chatMessages);
+      const userMessage: ChatMessage = {
+        id: uid(),
+        isFromUser: true,
+        text: displayLabel,
+        agentText: displayLabel === prompt ? undefined : prompt,
+      };
+      setChatMessages((msgs) => [...msgs, userMessage]);
       setIsSending(true);
       try {
-        const res = await askQuestion(selectedStudentId, prompt, priorTurns, conversationIdRef.current);
-        conversationIdRef.current = res.conversation_id;
+        const res = await askQuestion(
+          selectedStudentId,
+          prompt,
+          priorTurns,
+          chatConversationIdRef.current,
+        );
+        chatConversationIdRef.current = res.conversation_id;
         setChatMessages((msgs) => [...msgs, { id: uid(), isFromUser: false, text: res.text }]);
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
@@ -210,7 +235,10 @@ export default function App() {
       {showMissingAssignments && (
         <MissingAssignmentsModal
           state={missingState}
-          onRefresh={() => fetchMissing(selectedStudentId)}
+          onRefresh={() => {
+            const generation = loadGenerationRef.current;
+            void fetchMissing(selectedStudentId, generation);
+          }}
           onClose={() => setShowMissingAssignments(false)}
         />
       )}
