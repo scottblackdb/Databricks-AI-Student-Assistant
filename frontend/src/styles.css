@@ -61,26 +61,56 @@ body {
   border-right: 1px solid var(--border);
 }
 
-/* ---------- Suggested questions panel ---------- */
-.suggested-questions-panel {
+/* ---------- Side panels (left info, right suggested questions) ---------- */
+.side-panel {
   position: absolute;
-  left: 100%;
   top: 0;
   bottom: 0;
   width: 280px;
   padding: 20px 16px;
-  border-right: 1px solid var(--border);
   background: var(--bar-bg);
   overflow-y: auto;
 }
 
-.suggested-questions-title {
+.side-panel-left {
+  right: 100%;
+  border-left: 1px solid var(--border);
+}
+
+.side-panel-right {
+  left: 100%;
+  border-right: 1px solid var(--border);
+}
+
+.side-panel-title {
   margin: 0 0 16px;
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.5px;
   text-transform: uppercase;
   color: var(--text-secondary);
+}
+
+.side-panel-note {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.side-panel-note p {
+  margin: 0;
+}
+
+.side-panel-note strong {
+  color: var(--unt-green);
+  font-weight: 600;
 }
 
 .suggested-questions-list {
@@ -117,8 +147,8 @@ body {
   cursor: default;
 }
 
-@media (max-width: 1040px) {
-  .suggested-questions-panel {
+@media (max-width: 1320px) {
+  .side-panel {
     display: none;
   }
 }

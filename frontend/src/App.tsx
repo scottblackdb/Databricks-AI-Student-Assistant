@@ -10,6 +10,7 @@ import {
 import { SCHEDULE_LOADING_TEXT, toAgentTurns } from "./chatTurns";
 import { notificationCount } from "./messageFormatting";
 import { errorMessage, newMessageId } from "./utils";
+import { AgentInfoPanel } from "./components/AgentInfoPanel";
 import { Header, type PromptItem } from "./components/Header";
 import { MessageBubble } from "./components/MessageBubble";
 import { SettingsModal } from "./components/SettingsModal";
@@ -209,6 +210,8 @@ export default function App() {
   return (
     <div className="app-shell">
       <div className="app-container">
+        <AgentInfoPanel />
+
         <div className="app">
           <Header
             promptItems={MENU_PROMPTS}

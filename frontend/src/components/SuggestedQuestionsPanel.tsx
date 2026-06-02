@@ -8,8 +8,8 @@ interface Props {
 
 export function SuggestedQuestionsPanel({ items, disabled, onSelect }: Props) {
   return (
-    <aside className="suggested-questions-panel" aria-label="Suggested questions">
-      <h2 className="suggested-questions-title">Suggested questions</h2>
+    <aside className="side-panel side-panel-right" aria-label="Suggested questions">
+      <h2 className="side-panel-title">Suggested questions</h2>
       <ul className="suggested-questions-list">
         {items.map((item) => (
           <li key={item.label}>
