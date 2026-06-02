@@ -27,6 +27,7 @@ The Databricks personal access token lives **only on the backend** (in
 - **Settings** to switch the active student (Kimberly Dudley, Zachary Hicks,
   Michael Brown).
 - **Prompt menu** (hamburger) with preset prompts like "Recommend Me Events".
+- **Suggested questions** panel with one-click prompts (grades, events, graduation plan, etc.).
 
 ## Project layout
 
@@ -42,7 +43,7 @@ backend/    FastAPI app (proxies all Databricks calls) — also the Databricks A
   serve.py              App entrypoint (binds 0.0.0.0:$DATABRICKS_APP_PORT)
   requirements.txt
   .env.example
-  static/              built React UI, populated by build_frontend.sh (gitignored)
+  static/             # built React UI (from step 1; commit for Git deploy)
 frontend/   Vite + React + TypeScript SPA
   src/
     App.tsx               main screen + state
@@ -90,64 +91,210 @@ Open `http://localhost:5173`. Vite proxies `/api/*` to the backend on port 8000
 
 ## Deploying as a Databricks App
 
-The app ships as a **single web process**: FastAPI serves the `/api/*` routes
-*and* the built React UI as static files (no Vite, no CORS in production). The
-`backend/` directory is the app source root.
+In production the app runs as a **single web process**: FastAPI serves `/api/*`
+and the built React UI from `backend/static/`. There is no Vite dev server and no
+CORS configuration — the browser talks to the same origin.
 
-It authenticates with the app's **service principal** (OAuth) — the Apps runtime
-injects `DATABRICKS_HOST`, `DATABRICKS_CLIENT_ID`, and `DATABRICKS_CLIENT_SECRET`,
-so no PAT is needed. (Locally, `DATABRICKS_TOKEN` in `backend/.env` is used
-instead; the backend picks whichever is present.)
+Authentication uses the app's **service principal** (OAuth). The Apps runtime
+auto-injects `DATABRICKS_HOST`, `DATABRICKS_CLIENT_ID`, and
+`DATABRICKS_CLIENT_SECRET`, so **no PAT is required** in the deployed app.
+Locally, `DATABRICKS_TOKEN` in `backend/.env` is used instead.
 
-**1. Build the UI into the backend:**
+The **`backend/` directory is the app source root.** Deploy only that folder (or
+point the app's source-code path at `backend/` in the repo).
+
+### Prerequisites
+
+- Databricks CLI installed and authenticated (`databricks auth login`)
+- **CAN USE** on the SQL warehouse used for today's schedule
+- **CAN QUERY** on the model serving endpoint used for agent chat
+- Node.js and npm (local machine only — to build the frontend before deploy)
+
+### Step 1 — Configure `app.yaml`
+
+Edit `backend/app.yaml` with your workspace resources:
+
+```yaml
+command: ["python", "serve.py"]
+
+env:
+  - name: WAREHOUSE_ID
+    value: "<your-warehouse-id>"
+  - name: SERVING_ENDPOINT
+    value: "<your-serving-endpoint-name>"
+```
+
+Alternatively, attach the warehouse and serving endpoint as **App resources** in
+the Databricks UI and reference them with `valueFrom` instead of hardcoding ids:
+
+```yaml
+env:
+  - name: WAREHOUSE_ID
+    valueFrom: sql-warehouse
+  - name: SERVING_ENDPOINT
+    valueFrom: serving-endpoint
+```
+
+`DATABRICKS_HOST` and the service-principal OAuth credentials are injected
+automatically — do not set them in `app.yaml`.
+
+### Step 2 — Build the frontend
+
+**Run this before every deploy** (and after any frontend change):
 
 ```bash
-bash build_frontend.sh      # builds frontend/dist -> backend/static
+bash build_frontend.sh
 ```
 
-**2. Deploy the `backend/` folder.** It contains everything the App needs:
+This runs `npm run build` in `frontend/` and copies the output to
+`backend/static/`. Without `backend/static/index.html`, the app URL returns
+`{"detail": "Not Found"}` and only `/api/*` routes work.
 
-```
-backend/
-  app.yaml            # command: python serve.py  + WAREHOUSE_ID / SERVING_ENDPOINT
-  serve.py            # binds 0.0.0.0:$DATABRICKS_APP_PORT
-  requirements.txt    # auto-installed (incl. databricks-sdk)
-  app/                # FastAPI code
-  static/             # built React UI (from step 1)
-```
-
-Using the Databricks CLI:
+Verify the build:
 
 ```bash
-databricks apps create myunt-assistant            # once
+ls backend/static/index.html backend/static/assets/
+```
+
+### Step 3 — Include `static/` in the deployment bundle
+
+How you ship `backend/static/` depends on your deploy method:
+
+| Deploy method | How to include `static/` |
+| ------------- | ------------------------ |
+| **Git repository** | Commit `backend/static/` after running `build_frontend.sh`, then push and deploy |
+| **Workspace sync** (`databricks sync`) | Run `build_frontend.sh` locally first; sync copies the folder from disk |
+| **UI upload** | Upload the full `backend/` folder including `static/` |
+
+For Git-based deploys, add and commit the built assets whenever the UI changes:
+
+```bash
+git add backend/static/
+git commit -m "Rebuild frontend for deploy"
+git push
+```
+
+### Step 4 — Create the app (first time only)
+
+**CLI:**
+
+```bash
+databricks apps create myunt-assistant --description "myUNT student assistant"
+```
+
+**UI:** Apps → Create app → Custom app → set name and source.
+
+App names must be ≤26 characters, lowercase letters, numbers, and hyphens only.
+
+### Step 5 — Deploy
+
+**Option A — Sync to workspace, then deploy (CLI):**
+
+```bash
+# Upload backend/ (must include static/ from step 2)
 databricks sync backend /Workspace/Users/<you>/myunt-assistant
+
+# Deploy and start
 databricks apps deploy myunt-assistant \
   --source-code-path /Workspace/Users/<you>/myunt-assistant
 ```
 
-(Or use the Apps UI: create an app, point it at the synced `backend/` folder.)
+**Option B — Deploy from Git (CLI):**
 
-**3. Grant the app's service principal access** to the resources it calls — these
-are *not* auto-granted:
+Configure the app's Git repository in the Databricks UI (Apps → your app →
+Configure Git), then deploy with source path `backend/`:
 
-- **SQL warehouse** (`WAREHOUSE_ID`): `CAN USE`
-- **Model serving endpoint** (`SERVING_ENDPOINT`): `CAN QUERY`
+```bash
+databricks apps deploy myunt-assistant --source-code-path backend
+```
 
-Add them under the app's **Resources** (or grant directly to the app's service
-principal). You can also reference a warehouse/secret resource from `app.yaml`
-via `valueFrom: <resource-key>` instead of hardcoding the id.
+Enable **Auto deploy on push** in the UI if you want each push to `main` to
+redeploy automatically (requires a private GitHub repo and Git credential on
+the app's service principal).
+
+**Option C — Databricks UI:**
+
+1. Apps → select your app → **Deploy**
+2. Choose **From Git** or a **workspace folder**
+3. Set **Source code path** to `backend/` (not the repo root)
+4. Click **Deploy**
+
+### Step 6 — Grant resource permissions
+
+The app's service principal needs explicit access to the resources it calls.
+Add them under the app's **Resources** tab (recommended) or grant directly to
+the service principal:
+
+| Resource | Permission |
+| -------- | ---------- |
+| SQL warehouse (`WAREHOUSE_ID`) | **CAN USE** |
+| Model serving endpoint (`SERVING_ENDPOINT`) | **CAN QUERY** |
+
+Without these, the UI may load but schedule and chat requests will fail at
+runtime.
+
+### Step 7 — Verify
+
+Open the app URL from the Apps overview page (or **Open app**).
+
+| Check | Expected |
+| ----- | -------- |
+| App home page | React chat UI loads (not JSON `{"detail": "Not Found"}`) |
+| `GET /api/health` | `{ "ok": true, "auth_mode": "service-principal-oauth", "token_configured": false }` |
+| Today's schedule | Auto-loads in the chat on launch |
+| Suggested questions | Right panel visible on wide screens; clicking sends a prompt |
+
+If the UI is missing, check app **Logs** for `Frontend not found at ...` and
+re-run `build_frontend.sh`, then redeploy with `static/` included.
+
+If API calls fail, check **Logs** for Databricks auth or permission errors and
+confirm warehouse/endpoint permissions in step 6.
+
+### Redeploying after changes
+
+**Backend-only changes** — redeploy `backend/` as in step 5.
+
+**Frontend changes** — always run the full cycle:
+
+```bash
+bash build_frontend.sh
+git add backend/static/          # if using Git deploy
+databricks apps deploy myunt-assistant ...
+```
+
+### Databricks App vs local dev
+
+| | Local dev | Databricks App |
+| - | --------- | -------------- |
+| UI | Vite on `:5173` | `backend/static/` served by FastAPI |
+| API | FastAPI on `:8000` | Same process as UI |
+| Auth | `DATABRICKS_TOKEN` in `backend/.env` | Service principal OAuth (auto-injected) |
+| Config | `backend/.env` | `backend/app.yaml` `env` section |
+| CORS | Vite proxy (no CORS needed) | Same origin (no CORS needed) |
 
 ## Configuration
 
-All backend config is environment-driven (`backend/.env`, see `.env.example`):
+### Local development (`backend/.env`)
+
+Copy `backend/.env.example` to `backend/.env`:
 
 | Variable           | Purpose                                              |
 | ------------------ | ---------------------------------------------------- |
 | `DATABRICKS_HOST`  | Workspace base URL                                   |
-| `DATABRICKS_TOKEN` | Bearer token (required)                              |
+| `DATABRICKS_TOKEN` | Personal access token (required locally)             |
 | `WAREHOUSE_ID`     | SQL warehouse for the schedule query                 |
 | `SERVING_ENDPOINT` | Model serving endpoint name for the agent            |
 | `CORS_ORIGINS`     | Allowed frontend origins (comma-separated)           |
+
+### Databricks App (`backend/app.yaml`)
+
+| Variable / source | Purpose |
+| ----------------- | ------- |
+| `WAREHOUSE_ID` | SQL warehouse for today's schedule (set in `env` or via `valueFrom`) |
+| `SERVING_ENDPOINT` | Model serving endpoint for agent chat |
+| `DATABRICKS_HOST` | Auto-injected by Apps runtime |
+| `DATABRICKS_CLIENT_ID` / `DATABRICKS_CLIENT_SECRET` | Auto-injected service principal OAuth |
+| `DATABRICKS_APP_PORT` | Auto-injected; read by `serve.py` |
 
 ## API
 

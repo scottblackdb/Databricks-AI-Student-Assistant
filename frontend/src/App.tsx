@@ -12,6 +12,7 @@ import { notificationCount } from "./messageFormatting";
 import { Header, type PromptItem } from "./components/Header";
 import { MessageBubble } from "./components/MessageBubble";
 import { SettingsModal } from "./components/SettingsModal";
+import { SuggestedQuestionsPanel } from "./components/SuggestedQuestionsPanel";
 import {
   MissingAssignmentsModal,
   type MissingAssignmentsState,
@@ -19,6 +20,14 @@ import {
 
 const DEFAULT_PROMPT_ITEMS: PromptItem[] = [
   { label: "Recommend Me Events", prompt: "Based on my interests recommend me upcoming events" },
+];
+
+const SUGGESTED_QUESTIONS = [
+  "What are my grades?",
+  "What sporting events are coming up?",
+  "What community events are coming up?",
+  "What classes do I need to take to graduate?",
+  "Suggest what classes and when the classes are taught for next semester",
 ];
 
 function uid(): string {
@@ -173,75 +182,85 @@ export default function App() {
   const notifCount = missingState.text ? notificationCount(missingState.text) : 0;
 
   return (
-    <div className="app">
-      <Header
-        promptItems={DEFAULT_PROMPT_ITEMS}
-        notificationCount={notifCount}
-        onSelectPrompt={(item) => {
-          if (!isSending) void sendToAgent(item.label, item.prompt);
-        }}
-        onOpenSettings={() => setShowSettings(true)}
-        onOpenMissingAssignments={() => setShowMissingAssignments(true)}
-      />
+    <div className="app-shell">
+      <div className="app-container">
+        <div className="app">
+          <Header
+            promptItems={DEFAULT_PROMPT_ITEMS}
+            notificationCount={notifCount}
+            onSelectPrompt={(item) => {
+              if (!isSending) void sendToAgent(item.label, item.prompt);
+            }}
+            onOpenSettings={() => setShowSettings(true)}
+            onOpenMissingAssignments={() => setShowMissingAssignments(true)}
+          />
 
-      <main className="chat-area">
-        <div className="chat-inner">
-          <div className="bubble-row assistant">
-            <div className="bubble assistant greeting">
-              {timeOfDayGreeting()}, {firstName}!
+          <main className="chat-area">
+            <div className="chat-inner">
+              <div className="bubble-row assistant">
+                <div className="bubble assistant greeting">
+                  {timeOfDayGreeting()}, {firstName}!
+                </div>
+              </div>
+              {chatMessages.map((msg) => (
+                <MessageBubble key={msg.id} message={msg} />
+              ))}
+              <div ref={chatEndRef} />
             </div>
-          </div>
-          {chatMessages.map((msg) => (
-            <MessageBubble key={msg.id} message={msg} />
-          ))}
-          <div ref={chatEndRef} />
+          </main>
+
+          <footer className="question-bar">
+            <textarea
+              className="question-input"
+              placeholder="Ask a question…"
+              value={questionText}
+              rows={1}
+              disabled={isSending}
+              onChange={(e) => setQuestionText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+            />
+            <button
+              className="send-button"
+              aria-label="Send"
+              onClick={handleSend}
+              disabled={!questionText.trim() || isSending}
+            >
+              {isSending ? <span className="spinner" /> : "↑"}
+            </button>
+          </footer>
+
+          {showSettings && (
+            <SettingsModal
+              students={students}
+              selectedStudentId={selectedStudentId}
+              onSelect={setSelectedStudentId}
+              onClose={() => setShowSettings(false)}
+            />
+          )}
+
+          {showMissingAssignments && (
+            <MissingAssignmentsModal
+              state={missingState}
+              onRefresh={() => {
+                const generation = loadGenerationRef.current;
+                void fetchMissing(selectedStudentId, generation);
+              }}
+              onClose={() => setShowMissingAssignments(false)}
+            />
+          )}
         </div>
-      </main>
 
-      <footer className="question-bar">
-        <textarea
-          className="question-input"
-          placeholder="Ask a question…"
-          value={questionText}
-          rows={1}
+        <SuggestedQuestionsPanel
+          questions={SUGGESTED_QUESTIONS}
           disabled={isSending}
-          onChange={(e) => setQuestionText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              handleSend();
-            }
-          }}
+          onSelect={(question) => void sendToAgent(question, question)}
         />
-        <button
-          className="send-button"
-          aria-label="Send"
-          onClick={handleSend}
-          disabled={!questionText.trim() || isSending}
-        >
-          {isSending ? <span className="spinner" /> : "↑"}
-        </button>
-      </footer>
-
-      {showSettings && (
-        <SettingsModal
-          students={students}
-          selectedStudentId={selectedStudentId}
-          onSelect={setSelectedStudentId}
-          onClose={() => setShowSettings(false)}
-        />
-      )}
-
-      {showMissingAssignments && (
-        <MissingAssignmentsModal
-          state={missingState}
-          onRefresh={() => {
-            const generation = loadGenerationRef.current;
-            void fetchMissing(selectedStudentId, generation);
-          }}
-          onClose={() => setShowMissingAssignments(false)}
-        />
-      )}
+      </div>
     </div>
   );
 }

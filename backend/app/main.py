@@ -1,10 +1,11 @@
 """FastAPI app exposing the myUNT student-assistant endpoints."""
+import logging
 import uuid
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import databricks_client as db
@@ -20,6 +21,8 @@ from .models import (
 )
 from .students import STUDENTS
 
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="myUNT Student Assistant API")
 
 settings = get_settings()
@@ -29,6 +32,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+_STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+_STATIC_INDEX = _STATIC_DIR / "index.html"
 
 
 @app.exception_handler(db.DatabricksError)
@@ -87,9 +93,39 @@ async def agent_ask(req: AskRequest) -> AgentResponse:
     return AgentResponse(text=text, conversation_id=conversation_id)
 
 
+@app.on_event("startup")
+async def _log_static_status() -> None:
+    if _STATIC_INDEX.is_file():
+        logger.info("Serving React UI from %s", _STATIC_DIR)
+    else:
+        logger.warning(
+            "Frontend not found at %s — run build_frontend.sh and redeploy. "
+            "Only /api/* routes are available until static/ is present.",
+            _STATIC_INDEX,
+        )
+
+
+def _missing_frontend_html() -> str:
+    return """<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>myUNT — frontend not deployed</title></head>
+<body style="font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem;">
+  <h1>Frontend not deployed</h1>
+  <p>The React UI was not included in this deployment. Build it locally, then redeploy:</p>
+  <pre style="background: #f4f4f4; padding: 1rem; border-radius: 8px;">bash build_frontend.sh</pre>
+  <p>Ensure <code>backend/static/</code> is uploaded with the app (Git deploy requires committing that folder).</p>
+  <p>API health check: <a href="/api/health">/api/health</a></p>
+</body>
+</html>"""
+
+
 # Serve the built React frontend (frontend/dist copied to backend/static by build_frontend.sh).
 # Mounted last so the /api/* routes above take precedence. In local dev the Vite server on
 # :5173 serves the UI instead, so this directory may not exist.
-_STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
-if _STATIC_DIR.is_dir():
+if _STATIC_INDEX.is_file():
     app.mount("/", StaticFiles(directory=_STATIC_DIR, html=True), name="static")
+else:
+
+    @app.get("/")
+    async def missing_frontend() -> HTMLResponse:
+        return HTMLResponse(_missing_frontend_html(), status_code=503)
