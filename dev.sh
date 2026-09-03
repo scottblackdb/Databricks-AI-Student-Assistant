@@ -15,7 +15,7 @@ trap cleanup EXIT INT TERM
 echo "Starting backend on http://127.0.0.1:8000 …"
 # Bind 127.0.0.1 explicitly; the Vite proxy targets 127.0.0.1 to match (avoids the
 # IPv6 ::1 vs IPv4 mismatch that causes ECONNREFUSED).
-(cd "$ROOT/backend" && python3 -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000) &
+(cd "$ROOT/backend" && python3 -m uvicorn main:app --reload --host 127.0.0.1 --port 8000) &
 
 # Wait for the backend to be ready before starting the frontend, so the first
 # page load doesn't hit the proxy before uvicorn is listening.

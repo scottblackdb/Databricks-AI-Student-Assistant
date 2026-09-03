@@ -13,6 +13,14 @@ env:
   # Model serving endpoint name for the agent.
   - name: SERVING_ENDPOINT
     value: "mas-e8cd6cde-endpoint"
+  # Optional: call APIs in a different workspace than the App's injected DATABRICKS_HOST.
+  # When set, also provide OAuth credentials for that workspace (or use valueFrom secrets).
+  # - name: DATABRICKS_HOST_OVERRIDE
+  #   value: "https://adb-xxxx.azuredatabricks.net"
+  # - name: DATABRICKS_CLIENT_ID_OVERRIDE
+  #   value: "<service-principal-client-id>"
+  # - name: DATABRICKS_CLIENT_SECRET_OVERRIDE
+  #   valueFrom: override-sp-secret
   # DATABRICKS_HOST and the service-principal OAuth credentials
   # (DATABRICKS_CLIENT_ID / DATABRICKS_CLIENT_SECRET) are injected automatically
   # by the Apps runtime — no token needed here.

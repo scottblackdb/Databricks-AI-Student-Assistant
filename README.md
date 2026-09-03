@@ -33,12 +33,11 @@ The Databricks personal access token lives **only on the backend** (in
 
 ```
 backend/    FastAPI app (proxies all Databricks calls) — also the Databricks App root
-  app/
-    main.py               FastAPI routes + static UI mount
-    config.py             env-based settings
-    databricks_client.py  SQL + agent logic; PAT or service-principal OAuth
-    students.py           selectable students
-    models.py             request/response schemas
+  main.py               FastAPI routes + static UI mount
+  config.py             env-based settings
+  databricks_client.py  SQL + agent logic; PAT or service-principal OAuth
+  students.py           selectable students
+  models.py             request/response schemas
   app.yaml              Databricks App manifest
   serve.py              App entrypoint (binds 0.0.0.0:$DATABRICKS_APP_PORT)
   requirements.txt
@@ -71,7 +70,7 @@ both. (Or run the two steps below in separate terminals.)
 cd backend
 cp .env.example .env          # then set DATABRICKS_TOKEN
 python3 -m pip install -r requirements.txt
-python3 -m uvicorn app.main:app --reload --port 8000
+python3 -m uvicorn main:app --reload --port 8000
 ```
 
 The backend serves on `http://localhost:8000`. Check `GET /api/health` —
@@ -137,6 +136,12 @@ env:
 
 `DATABRICKS_HOST` and the service-principal OAuth credentials are injected
 automatically — do not set them in `app.yaml`.
+
+To call a warehouse or serving endpoint in a **different workspace**, add
+`DATABRICKS_HOST_OVERRIDE` plus `DATABRICKS_CLIENT_ID_OVERRIDE` and
+`DATABRICKS_CLIENT_SECRET_OVERRIDE` to the `env` section (see commented example in
+`app.yaml`). The override OAuth credentials must belong to a service principal
+with access to the target workspace resources.
 
 ### Step 2 — Build the frontend
 
@@ -247,6 +252,11 @@ Open the app URL from the Apps overview page (or **Open app**).
 If the UI is missing, check app **Logs** for `Frontend not found at ...` and
 re-run `build_frontend.sh`, then redeploy with `static/` included.
 
+If the app crashes with `ModuleNotFoundError` on startup, confirm the deploy
+source path is `backend/` and that all `*.py` files (`main.py`, `config.py`,
+etc.) sit alongside `serve.py` in the deployed bundle — the Databricks Apps
+runtime does not reliably import nested Python packages.
+
 If API calls fail, check **Logs** for Databricks auth or permission errors and
 confirm warehouse/endpoint permissions in step 6.
 
@@ -281,6 +291,9 @@ Copy `backend/.env.example` to `backend/.env`:
 | Variable           | Purpose                                              |
 | ------------------ | ---------------------------------------------------- |
 | `DATABRICKS_HOST`  | Workspace base URL                                   |
+| `DATABRICKS_HOST_OVERRIDE` | Optional — when set, replaces `DATABRICKS_HOST` for API calls |
+| `DATABRICKS_CLIENT_ID_OVERRIDE` | OAuth client id for override workspace (with host override, no PAT) |
+| `DATABRICKS_CLIENT_SECRET_OVERRIDE` | OAuth client secret for override workspace (with host override, no PAT) |
 | `DATABRICKS_TOKEN` | Personal access token (required locally)             |
 | `WAREHOUSE_ID`     | SQL warehouse for the schedule query                 |
 | `SERVING_ENDPOINT` | Model serving endpoint name for the agent            |
@@ -293,6 +306,9 @@ Copy `backend/.env.example` to `backend/.env`:
 | `WAREHOUSE_ID` | SQL warehouse for today's schedule (set in `env` or via `valueFrom`) |
 | `SERVING_ENDPOINT` | Model serving endpoint for agent chat |
 | `DATABRICKS_HOST` | Auto-injected by Apps runtime |
+| `DATABRICKS_HOST_OVERRIDE` | Optional in `app.yaml` — when set, replaces `DATABRICKS_HOST` for SQL and agent API calls |
+| `DATABRICKS_CLIENT_ID_OVERRIDE` | OAuth client id for the override workspace (required with host override, no PAT) |
+| `DATABRICKS_CLIENT_SECRET_OVERRIDE` | OAuth client secret for the override workspace (required with host override, no PAT) |
 | `DATABRICKS_CLIENT_ID` / `DATABRICKS_CLIENT_SECRET` | Auto-injected service principal OAuth |
 | `DATABRICKS_APP_PORT` | Auto-injected; read by `serve.py` |
 
